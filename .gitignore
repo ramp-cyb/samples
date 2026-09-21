@@ -5,6 +5,8 @@ __pycache__/
 build/
 dist/
 data/*.jsonl
+data/stats.json
+data/benchmark.json
 data/runs/
 checkpoints/
 .venv/

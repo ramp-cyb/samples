@@ -15,6 +15,46 @@ pytest                                  # 447 tests
 python scripts/serve_ui.py              # live dashboard on http://127.0.0.1:8000
 ```
 
+## Running it on your own machine
+
+Python 3.10 or newer. The engine, the data generator, the evaluation harness and the
+UI have **no third-party dependencies** and run fine on a laptop CPU. Only fine-tuning
+needs a GPU.
+
+```bash
+bash scripts/setup_local.sh            # Linux, macOS, Git Bash
+```
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\setup_local.ps1    # Windows
+```
+
+The script creates `.venv`, installs the package, runs the tests, generates a small
+dataset and confirms the oracle scores 1.000 on it. Add `--train` (or `-Train`) to also
+install torch, transformers and peft.
+
+By hand, if you prefer:
+
+```bash
+python -m venv .venv && source .venv/bin/activate     # Windows: .venv\Scripts\activate
+pip install -e ".[test]"
+pytest
+python scripts/serve_ui.py
+```
+
+### Pointing it at a local model
+
+Install [Ollama](https://ollama.com), pull a model with native tool calling, then run
+the UI or the evaluator against it:
+
+```bash
+ollama pull qwen3:1.7b
+python scripts/serve_ui.py --policy openai --model qwen3:1.7b
+python scripts/run_eval.py --policy openai --model qwen3:1.7b --data data/eval_in_dist.jsonl
+```
+
+vLLM, llama.cpp's server, LM Studio and anything else with an OpenAI-compatible
+endpoint work the same way via `--base-url`.
+
 ## Why it is not a trivial mapping
 
 The user never names a device or an action:
