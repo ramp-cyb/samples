@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "homesim"
+version = "0.1.0"
+description = "Simulated smart home for training and evaluating small tool-calling LLMs"
+requires-python = ">=3.10"
+dependencies = []
+
+[project.optional-dependencies]
+test = ["pytest>=7"]
+model = ["torch", "transformers>=4.45", "accelerate"]
+train = ["torch", "transformers>=4.45", "peft>=0.12", "datasets", "accelerate"]
+
+[tool.setuptools.packages.find]
+include = ["homesim*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
