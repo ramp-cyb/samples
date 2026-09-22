@@ -18,48 +18,6 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import argparse
-import json
-from typing import Any
-
-TOOL_CALL_TEMPLATE = "<tool_call>\n{payload}\n</tool_call>"
-
-
-def render_assistant(msg: dict[str, Any]) -> str:
-    parts = []
-    if msg.get("content"):
-        parts.append(msg["content"])
-    for c in msg.get("tool_calls", []):
-        payload = json.dumps({"name": c["function"]["name"], "arguments": c["function"]["arguments"]}, ensure_ascii=False)
-        parts.append(TOOL_CALL_TEMPLATE.format(payload=payload))
-    return "\n".join(parts)
-
-
-def build_examples(records: list[dict[str, Any]], tokenizer, max_len: int) -> list[dict[str, list[int]]]:
-    """One training example per episode; labels masked to assistant spans."""
-    examples = []
-    for rec in records:
-        messages = rec["messages"]
-        input_ids: list[int] = []
-        labels: list[int] = []
-        prefix: list[dict[str, Any]] = []
-        for msg in messages:
-            if msg["role"] == "assistant":
-                rendered = tokenizer.apply_chat_template(
-                    prefix, tools=rec["tools"], add_generation_prompt=True, tokenize=False
-                )
-                prompt_ids = tokenizer(rendered, add_special_tokens=False)["input_ids"]
-                new = prompt_ids[len(input_ids):]
-                input_ids.extend(new)
-                labels.extend([-100] * len(new))
-                target = render_assistant(msg) + tokenizer.eos_token
-                target_ids = tokenizer(target, add_special_tokens=False)["input_ids"]
-                input_ids.extend(target_ids)
-                labels.extend(target_ids)
-            prefix.append(msg)
-        if len(input_ids) > max_len:
-            continue
-        examples.append({"input_ids": input_ids, "labels": labels})
-    return examples
 
 
 def main() -> None:
@@ -71,9 +29,11 @@ def main() -> None:
     ap.add_argument("--lr", type=float, default=1e-4)
     ap.add_argument("--batch-size", type=int, default=2)
     ap.add_argument("--grad-accum", type=int, default=8)
-    ap.add_argument("--max-len", type=int, default=4096)
+    ap.add_argument("--max-len", type=int, default=8192)
     ap.add_argument("--rank", type=int, default=32)
     ap.add_argument("--alpha", type=int, default=64)
+    ap.add_argument("--no-thinking", action="store_true",
+                    help="pass enable_thinking=False to the chat template (Qwen3)")
     args = ap.parse_args()
 
     import torch
@@ -81,11 +41,21 @@ def main() -> None:
     from transformers import AutoModelForCausalLM, AutoTokenizer, Trainer, TrainingArguments
 
     from homesim.datagen import read_jsonl
+    from homesim.training import TemplateMismatch, build_examples
 
     tokenizer = AutoTokenizer.from_pretrained(args.model)
     records = read_jsonl(args.data)
-    examples = build_examples(records, tokenizer, args.max_len)
-    print(f"{len(examples)} training examples (dropped {len(records) - len(examples)} over {args.max_len} tokens)")
+    template_kwargs = {"enable_thinking": False} if args.no_thinking else {}
+    try:
+        examples, stats = build_examples(records, tokenizer, args.max_len, **template_kwargs)
+    except TemplateMismatch as e:
+        raise SystemExit(
+            f"chat template incompatible with span-masked training: {e}\n"
+            "Try --no-thinking, or pick a model whose template renders turns additively."
+        )
+    print(stats.describe())
+    if not examples:
+        raise SystemExit("no usable training examples; raise --max-len or check the dataset")
 
     def collate(batch):
         maxlen = max(len(b["input_ids"]) for b in batch)
